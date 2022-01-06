@@ -2,8 +2,8 @@
 # process initial GISAID dataset
 readNextMeta_states <- function(next_meta_path){
   SS <- read_tsv(next_meta_path)
-  SS <- SS[,c("Virus name", "Collection date", "Pango lineage", "AA Substitutions","Clade", "Location")]
-  names(SS) <- c("seqName", "Date", "pango_lineage", "AAsubstitutions", "Clade", "Location")
+  SS <- SS[,c("Virus name", "Collection date", "Pango lineage", "AA Substitutions","Clade", "Location", "Accession ID")]
+  names(SS) <- c("seqName", "Date", "pango_lineage", "AAsubstitutions", "Clade", "Location", "Accession ID")
   SS$Date <- ymd(SS$Date)
   SS$seqName <- gsub("hCoV-19/", "", SS$seqName)
   SS$country <- sapply(SS$seqName, function(x) str_split(x, "/")[[1]][1])
@@ -137,15 +137,13 @@ calc_prop_day <- function(dat, var_categories, timeInt){
 }
 
 # check for long stretches of zero variant-specific infections - can affect Rt estimates 
-check_outliers <- function(variant_df_vec, num_zero_days) {
+check_outliers <- function(variant_df_vec, num_zero_days, interest_col) {
   
   prob_log_list <- list()
   
-  interest_col <- "I"
-  
-  for (state in states) {
+  for (each_state in states) {
     
-    dat <- variant_df_vec[[state]]
+    dat <- variant_df_vec %>% dplyr::filter(state == each_state)
     dat_I <- dat[, interest_col]
     dat_I[which(is.na(dat_I))] <- 0
     dat_I <- dat_I[(min(which(dat_I > 0))):length(dat_I)]
@@ -157,62 +155,42 @@ check_outliers <- function(variant_df_vec, num_zero_days) {
   prob_log
 }
 
-rt_fun_12inf = function(df, name, window_size, mcmc_control, seed) {
+# check for long stretches of zero variant-specific infections - can affect Rt estimates 
+check_outliers_replicate <- function(variant_df_vec, num_zero_days, interest_col) {
   
-  var_I <- "I"
-
-  # restrict to at least 12 infections to prevent to avert issues w/ posterior CV (see original EpiEstim paper)
-  df$Cumul_I <- rep(NA, nrow(df))
-  df$Cumul_I <- cumsum(df[, var_I])
-  min12 <- min(which(df[, "Cumul_I"] >= 12))
-  date_min12 <- df[min12, "Date"]
+  prob_log_list <- list()
   
-  # df filtered where there are 12 cumulative variant infections to end of data
-  df2 = df[min12:nrow(df), ] 
-  
-  # if have negative infections, sets to 0 (can be caused by rolling average)
-  df2[which(df2[,var_I] < 0), var_I] <- 0 
-  
-  # specify estimation window
-  t_start <- seq(2, nrow(df2)-window_size) 
-  t_end <- t_start + window_size
-  
-  # specify config statements
-  config <- make_config(list(mean_si = 5.2, std_mean_si = 1,min_mean_si = 2.2, max_mean_si = 8.2,
-                             std_si = 4, std_std_si = 0.5,min_std_si = 2.5, max_std_si = 5.5,
-                             n1=500,n2=50,t_start=t_start, t_end=t_end,
-                             mcmc_control = mcmc_control, # for reproducibility
-                             seed = seed)
-                        # n1 = number of pairs of mean and sd of the SI that are drawn 
-                        # n2 = size of the posterior sample drawn for each pair of mean, sd of SI
-  )
-  
-  # daily infection incidence vector
-  epiestim_output = estimate_R(df2[ , var_I],
-                               method="uncertain_si",
-                               config = config)
-  
-  Rt_estimates <- epiestim_output$R
-  I_estimates <- data.frame(epiestim_output$I)
-  I_estimates$Date <- df2$Date
-  
-  # adds back in days that were filtered out to match the days in the main dataframe
-  start_date <- date_min12 + 1 + window_size # t_start vector must start after the 1st day of non-null incidence
-  Rt_estimates$Date <- start_date + 0:(nrow(Rt_estimates) - 1)
-  Rt_estimates <- left_join(Rt_estimates, I_estimates, by = c("Date"))
-  
-  Rt_estimates <- Rt_estimates %>%
-    dplyr::rename(rt = `Mean(R)`,
-                  rtlowci = `Quantile.0.25(R)`,
-                  rtupci = `Quantile.0.975(R)`) %>%
-    dplyr::select(Date, t_start, t_end, rt, rtlowci, rtupci)
-  
-  df_sub <- df[, c("state", "Date", "I")]
-  
-  merge <- df_sub %>% 
-    dplyr::left_join(Rt_estimates, by = "Date") 
-  
-  merge
+  for (each_state in states) {
+    
+    dat <- variant_df_vec %>% dplyr::filter(state == each_state)
+    
+    length_zeroes <- NULL
+    prob_log_reps <- NULL
+    for (each_rep in 1:length(unique(dat$variable))) { # for each replicate column
+      
+      interest_col_rep <- paste0(interest_col, each_rep) 
+      dat_I <- dat[which(dat$variable == interest_col_rep), ]
+      dat_I <- dat_I[order(dat_I$Date, decreasing = FALSE), ]
+      dat_I[which(is.na(dat_I))] <- 0
+      dat_I <- dat_I[min(which(dat_I$value > 0)):nrow(dat_I), ] # gets rid of NA/0s at start
+      
+      # if we have any 0 values that appears in a row for more than the number of days
+      if ((any(rle(dat_I$value)$lengths[rle(dat_I$value)$values==0] > num_zero_days)) == TRUE) {
+        prob_log_reps <- c(prob_log_reps, each_rep)
+        max_dieout_rep <- rle(dat_I$value)$lengths[rle(dat_I$value)$values==0] # which died out
+        max_dieout_rep <- max_dieout_rep[max_dieout_rep > num_zero_days] # max of dieout days > num_zero_days
+        max_dieout_rep <- max(max_dieout_rep)
+        length_zeroes <- c(length_zeroes, max_dieout_rep)
+      }
+    }
+    state_results <- rbind.data.frame(prob_log_reps, length_zeroes)
+    if (length(state_results != 0)) {
+      colnames(state_results) <- NULL
+      rownames(state_results) <- c("Replicate_Number", "Max_Dieout_Length")
+    }
+    prob_log_list[[each_state]] <- state_results
+  }
+  prob_log_list
 }
 
 # rbinds list of states and adds name
@@ -294,4 +272,138 @@ g_legend <- function(a.gplot) {
   leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
   legend <- tmp$grobs[[leg]]
   return(legend)
+}
+
+mean_CI_replicates <- function(dat) {
+  
+  dat_row_all <- NULL
+  for (each_row in 1:nrow(dat)) {
+    
+    dat_row <- dat[each_row, ]
+    
+    if(any(!is.na(dat_row[, 2:(1+replicates)]))) {
+      dat_row$mean <- rowMeans(dat_row[, 2:(1+replicates)], na.rm = TRUE)
+      dat_row$loci <- quantile(dat_row[, 2:(1+replicates)], prob = 0.025, na.rm = TRUE)
+      dat_row$hici <- quantile(dat_row[, 2:(1+replicates)], prob = 0.975, na.rm = TRUE) 
+    } else {
+      dat_row$mean <- NA
+      dat_row$loci <- NA
+      dat_row$hici <- NA 
+    }
+    dat_row <- dat_row[, c("state", "Date", "Variant_Category", "mean", "loci", "hici")]
+    dat_row_all <- rbind.data.frame(dat_row_all, dat_row)
+  }
+  dat_row_all
+}
+
+mean_CI_replicates_ratio <- function(dat) {
+  
+  dat_row_all <- NULL
+  for (each_row in 1:nrow(dat)) {
+    
+    dat_row <- dat[each_row, ]
+    
+    if(any(!is.na(dat_row[, 3:(1+replicates)]))) {
+      dat_row$mean <- rowMeans(dat_row[, 3:(2+replicates)], na.rm = TRUE)
+      dat_row$loci <- quantile(dat_row[, 3:(2+replicates)], prob = 0.025, na.rm = TRUE)
+      dat_row$hici <- quantile(dat_row[, 3:(2+replicates)], prob = 0.975, na.rm = TRUE) 
+    } else {
+      dat_row$mean <- NA
+      dat_row$loci <- NA
+      dat_row$hici <- NA 
+    }
+    dat_row <- dat_row[, c("state", "Date", "mean", "loci", "hici")]
+    dat_row_all <- rbind.data.frame(dat_row_all, dat_row)
+  }
+  dat_row_all
+}
+
+median_CI_replicates_ratio <- function(dat) {
+  
+  dat_row_all <- NULL
+  for (each_row in 1:nrow(dat)) {
+    
+    dat_row <- dat[each_row, ]
+    
+    if(any(!is.na(dat_row[, 3:(1+replicates)]))) {
+      dat_row$median <- rowMedians(as.matrix(dat_row[, 3:(2+replicates)]), na.rm = TRUE)
+      dat_row$loci <- quantile(dat_row[, 3:(2+replicates)], prob = 0.025, na.rm = TRUE)
+      dat_row$hici <- quantile(dat_row[, 3:(2+replicates)], prob = 0.975, na.rm = TRUE) 
+    } else {
+      dat_row$median <- NA
+      dat_row$loci <- NA
+      dat_row$hici <- NA 
+    }
+    dat_row <- dat_row[, c("state", "Date", "median", "loci", "hici")]
+    dat_row_all <- rbind.data.frame(dat_row_all, dat_row)
+  }
+  dat_row_all
+}
+
+rt_fun_replicate_parallel <- function(df, window_size, mcmc_control, seed) {
+  
+  # restrict to at least 12 infections to prevent to avert issues w/ posterior CV (see original EpiEstim paper)
+  df <- as.matrix(df)
+  date_names <- colnames(df)
+  
+  cumsum_inf <- rowCumsums(df)
+  min12 <- min(which(cumsum_inf >= 12))
+  df2 <- df[min12:length(df)]
+  df2_dates <- date_names[min12:length(date_names)]
+  
+  # # 1st day with infections of variant to start the R estimate otherise R estimate artificially high
+  # non0 <- min(which(df > 0)) 
+  # 
+  # # df filtered where there is the first case of variant to end of dataset
+  # df2 <- df[non0:length(df)] 
+  
+  # if have negative infections, sets to 0 (can be caused by rolling average)
+  df2[which(df2 < 0)] <- 0 
+  
+  # specify estimation window
+  t_start <- seq(2, length(df2)-window_size) 
+  t_end <- t_start + window_size
+  
+  # specify config statements
+  config <- make_config(list(mean_si = 5.2, std_mean_si = 1,min_mean_si = 2.2, max_mean_si = 8.2,
+                             std_si = 4, std_std_si = 0.5,min_std_si = 2.5, max_std_si = 5.5,
+                             n1=500,n2=50,t_start=t_start, t_end=t_end,
+                             mcmc_control = mcmc_control, # for reproducibility
+                             seed = seed))
+  # n1 = number of pairs of mean and sd of the SI that are drawn 
+  # n2 = size of the posterior sample drawn for each pair of mean, sd of SI
+  
+  # for uncertain si:
+  # mean_si = positive real giving the average mean serial interval
+  # std_mean_si = standard deviation of the distribution from which mean serial intervals are drawn
+  # min_mean_si = lower bound of the distribution from which mean serial intervals are drawn
+  # max_mean_si =  upper bound of the distribution from which mean serial intervals are drawn
+  # std_si = non negative real giving the average standard deviation of the serial interval
+  # std_std_si = standard deviation of the distribution from which standard deviations of the serial interval are drawn 
+  # min_std_si = lower bound of the distribution from which standard deviations of the serial interval are drawn 
+  # max_std_si = upper bound of the distribution from which standard deviations of the serial interval are drawn 
+  
+  # daily infection incidence vector
+  df2 <- data.frame(I = df2)
+  epiestim_output <- estimate_R(df2,
+                                method="uncertain_si",
+                                config = config)
+  
+  if (any(epiestim_output$si_distr < 0)) {
+    print("warning: negative serial interval")
+  }
+  
+  Rt_estimates <- data.frame(rt = epiestim_output$R$`Mean(R)`)
+  
+  # t_start vector must start after the 1st day of >12 inf incidence
+  start_date <- as.Date(df2_dates[1]) + 1 + window_size
+  Rt_estimates$Date <- start_date + 0:(length(Rt_estimates$rt) - 1)
+  
+  # join to full date range so can cbind dataframes
+  df_date_names <- data.frame(Date = as.Date(date_names))
+  
+  Rt_estimates_all_dates <- df_date_names %>%
+    dplyr::left_join(Rt_estimates, by = c("Date"))
+  
+  Rt_estimates_all_dates
 }
