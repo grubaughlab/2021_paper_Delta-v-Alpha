@@ -185,11 +185,11 @@ all_CT_delta <- dat %>% dplyr::filter(Variant_Category == "Delta")
 all_CT_delta$Month <- lubridate::month(all_CT_delta$Collection_Date, label = TRUE)
 
 p <- ggplot(all_CT_delta, aes(x=Month, y=CT, color = Variant_Category)) +
-  geom_point(aes(color = Variant_Category), delta = 0.6, position = position_jitter(width = 0.2, height = 0), size = 1) +
+  geom_point(aes(color = Variant_Category), alpha = 0.6, position = position_jitter(width = 0.2, height = 0), size = 1) +
   stat_summary(geom = "point", fun = "mean", color = "black", size = 1) +
   geom_errorbar(stat="summary", fun.data="mean_se", fun.args = list(mult = 1.96), width = 0.1, color = "black") +
-  scale_color_manual(values = customPalette) +  
-  scale_fill_manual(values = customPalette) +
+  scale_color_manual(values = customPalette[2]) +  
+  scale_fill_manual(values = customPalette[2]) +
   ylab("PCR CT Value") +
   xlab("Month") +
   ggtitle("Yale University (Connecticut) - Delta") +
@@ -238,7 +238,7 @@ mean_delta <- paste0("Mean=", round(mean(delta_CT$log10_ge_ml), digits = 2))
 mean_alpha_nonlog <- round(mean(alpha_CT$ge_ml), digits = 2)
 mean_delta_nonlog <- round(mean(delta_CT$ge_ml), digits = 2)
 round((mean_delta_nonlog/mean_alpha_nonlog), digits = 2)
-  
+
 median_alpha <- paste0("Median=", round(median(alpha_CT$log10_ge_ml), digits = 2))
 median_delta <- paste0("Median=", round(median(delta_CT$log10_ge_ml), digits = 2))
 
@@ -263,9 +263,6 @@ p  <- ggplot(all_CT, aes(x=Variant_Category, y=log10_ge_ml, color = Variant_Cate
 
 p
 plot_CT_Yale_Std <- p
-
-p <- grid.arrange(ggarrange(plot_CT_Yale_Std))
-ggsave(paste(path_figures, "Fig_S8.pdf", sep=""), p, height = 5, width =5)
 
 # Connecticut / JAX Data ----------------------------------------------------------------
 
@@ -470,7 +467,6 @@ p  <- ggplot(all_CT_orf1, aes(x=Variant_Category, y=CT_orf1, color = Variant_Cat
 
 p 
 plot_MA_MGB_orf1 <- p
-ggsave(paste(path_figures, "Fig_S9.pdf", sep=""), height = 5, width =5)
 
 # Maine / HETL / Jax Data ----------------------------------------------------------------
 
@@ -555,12 +551,6 @@ plot_ME_HETL_Jax_Lab1_dens <- p
 
 # Combo Plot --------------------------------------------------------------
 
-p <- ggarrange(plot_CT_Yale_Alpha_Time,
-               plot_CT_Yale_Delta_Time,
-               labels = c("A", "B"))
-
-ggsave(paste(path_figures, "Fig_S7.pdf", sep=""), p, height = 5, width =10)
-
 p <- ggarrange(plot_CT_Yale,
                plot_CT_Jax,
                plot_MA_MGB,
@@ -568,25 +558,10 @@ p <- ggarrange(plot_CT_Yale,
 
 ggsave(paste(path_figures, "Fig_4.pdf", sep=""), p, height = 7, width =10)
 
-library(gridExtra)
-library(ggpubr)
+p <- ggarrange(plot_CT_Yale_Alpha_Time,
+               plot_CT_Yale_Delta_Time,
+               plot_CT_Yale_Std,
+               plot_MA_MGB_orf1,
+               labels = c("A", "B", "C", "D"))
 
-# for grabbing legend for use in a combination plot
-g_legend <- function(a.gplot) {
-  tmp <- ggplot_gtable(ggplot_build(a.gplot))
-  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
-  legend <- tmp$grobs[[leg]]
-  return(legend)
-}
-
-mylegend <- g_legend(plot_CT_Yale_dens  + theme(legend.position='bottom'))
-p <- grid.arrange(ggarrange(plot_CT_Yale_dens + theme(legend.position="none") + xlim(10, 35),
-                            plot_CT_Jax_dens + theme(legend.position="none") + xlim(10, 35),
-                            plot_MA_MGB_dens + theme(legend.position="none") + xlim(10, 35),
-                            plot_ME_HETL_Jax_Lab1_dens + theme(legend.position="none") + xlim(10, 35),
-                            nrow = 2, ncol = 2),
-                  mylegend,
-                  nrow = 2,
-                  heights = c(9.5, 0.5))
-ggsave(paste(path_figures, "Fig_S10.pdf", sep=""), p, height = 7, width =10)
-
+ggsave(paste(path_figures, "Fig_S4.pdf", sep=""), p, height = 10, width =10)

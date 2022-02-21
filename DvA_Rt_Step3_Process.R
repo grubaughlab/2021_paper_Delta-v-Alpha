@@ -180,6 +180,20 @@ rt_plot_other <- ggplot(other_rt_melt, aes(Date, value)) +
   ylab("Estimated Mean Rt (1000 samples)") +
   theme(legend.position = "none")
 
+# Add co-circulation period w/ estimated infections
+load(paste0(path_data, "cocirc_plot_data.rda"))
+p_cocirc <- ggplot(trunc_inf_all_pop_mean) + 
+  geom_bar(aes(x = Date, y = Mean_Inf_per_100K, fill = Variant_Category, color = Variant_Category), stat = "identity") +
+  scale_fill_manual(values = customPalette, name = "Variant Category") +
+  scale_color_manual(values = customPalette, name = "Variant Category") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(color = "black"),
+    axis.title.y.right = element_text(color = "black")) + 
+  facet_wrap(~state, scales = "fixed", ncol = 1) +
+  theme(legend.position="bottom") +
+  ylab("Mean Estimated Infections per 100K Population") 
+
 #############################################################################################################################
 # Plots ----------------------------------------------
 #############################################################################################################################
@@ -198,27 +212,28 @@ p <- ggarrange(rt_plot_all +guides(fill=guide_legend(nrow=2,byrow=TRUE)),
 ggsave(paste(path_figures, "Fig_3.pdf", sep=""), p, height = 10, width =10)
 
 # plot mean Rt and ratios - full CI
-p <- ggarrange(rt_plot_all_CI +guides(fill=guide_legend(nrow=2,byrow=TRUE)), 
+p <- ggarrange(p_cocirc + guides(fill=guide_legend(nrow=2,byrow=TRUE)),
+               rt_plot_all_CI +guides(fill=guide_legend(nrow=2,byrow=TRUE)), 
                rt_ratio_ad_CI + guides(fill=guide_legend(nrow=2,byrow=TRUE)),
-               labels = c("A", "B"),
-               ncol = 2,
-               nrow = 1,
-               widths = c(1.5, 1.5), 
-               heights = c(5, 5))
-
-ggsave(paste(path_figures, "Fig_S5.pdf", sep=""), p, height = 10, width =10)
-
-# plot raw runs by sample
-p <- ggarrange(rt_plot_alpha +guides(fill=guide_legend(nrow=2,byrow=TRUE)), 
-               rt_plot_delta + guides(fill=guide_legend(nrow=2,byrow=TRUE)),
-               rt_plot_other + guides(fill=guide_legend(nrow=2,byrow=TRUE)),
                labels = c("A", "B", "C"),
                ncol = 3,
                nrow = 1,
                widths = c(1.5, 1.5, 1.5), 
                heights = c(5, 5, 5))
 
-ggsave(paste(path_figures, "Fig_S6.pdf", sep=""), p, height = 10, width =10)
+ggsave(paste(path_figures, "Fig_S3.pdf", sep=""), p, height = 10, width =10)
+
+# plot raw runs by sample
+# p <- ggarrange(rt_plot_alpha +guides(fill=guide_legend(nrow=2,byrow=TRUE)), 
+#                rt_plot_delta + guides(fill=guide_legend(nrow=2,byrow=TRUE)),
+#                rt_plot_other + guides(fill=guide_legend(nrow=2,byrow=TRUE)),
+#                labels = c("A", "B", "C"),
+#                ncol = 3,
+#                nrow = 1,
+#                widths = c(1.5, 1.5, 1.5), 
+#                heights = c(5, 5, 5))
+# 
+# ggsave(paste(path_figures, "Fig_S6.pdf", sep=""), p, height = 10, width =10)
 
 #############################################################################################################################
 # Summary Statistics  ----------------------------------------------

@@ -12,6 +12,8 @@
 library(RColorBrewer)
 library(ggplot2)
 library(scales)
+library(dplyr)
+library(plyr)
 
 # number of replicates in files
 replicates <- 1000
@@ -105,7 +107,7 @@ for (each_state in unique(dat$state)) {
     die_out <- ifelse(nrow(dat_state_rep[which(dat_state_rep$Zero_CumSum == 0), ]) == 0, 
                       max(dat_state_rep$Date), 
                       min(dat_state_rep[which(dat_state_rep$Zero_CumSum == 0), "Date"]))
-    die_out_state_single <- cbind.data.frame(Rep = each_rep, Die_Out_Date = as.Date(die_out))
+    die_out_state_single <- cbind.data.frame(Rep = each_rep, Die_Out_Date = as.Date(die_out, origin = "1970-01-01"))
     die_out_state <- rbind.data.frame(die_out_state, die_out_state_single)
   }
   die_out_date_list[[each_state]] <- die_out_state
@@ -171,8 +173,8 @@ for (each_state in unique(dat$state)) {
   dat_cocirc_state <- dat_cocirc %>% 
     dplyr::filter(State == each_state) %>%
     dplyr::select("Mean Delta Start Date", "Mean Alpha Die-Out Date")
-  earliest_date <- as.Date(unlist(dat_cocirc_state[1]))
-  latest_date <-  as.Date(unlist(dat_cocirc_state[2]))
+  earliest_date <- as.Date(unlist(dat_cocirc_state[1]), origin = "1970-01-01")
+  latest_date <-  as.Date(unlist(dat_cocirc_state[2]), origin = "1970-01-01")
   dat_state_dates <- dat_state %>% dplyr::filter(Date >= earliest_date, Date <= latest_date)
   trunc_inf_list[[each_state]] <- dat_state_dates
 }
@@ -202,7 +204,7 @@ p <- ggplot(trunc_inf_all_pop_mean) +
   theme(legend.position="bottom") +
   ylab("Mean Estimated Infections per 100K Population") 
 
-ggsave(paste(path_figures, "Fig_S3.pdf", sep=""), p, height = 5, width =10)
+save(trunc_inf_all_pop_mean, file = paste0(path_data, "cocirc_plot_data.rda"))
 
 #############################################################################################################################
 # Delta and Alpha Co-Circulation - Rt  ----------------------------------------------
